@@ -1,16 +1,13 @@
 import express from 'express';
- const app = express();
+import {errorHandler} from '@/middleware/errorHandler'
+import {authRouter} from '@/modules/auth/auth.routes'
+
+export const app = express();
 
 app.use(express.json());
 
 app.use(express.urlencoded({ extended: true }));
 
-// Health Check
-app.get("/", (_, res) => {
-  res.status(200).json({
-    success: true,
-    message: "Billing Subscription Engine API is running 🚀",
-  });
-});
+app.use('/api/auth', authRouter);
 
-export default app;
+app.use(errorHandler); 
