@@ -39,6 +39,7 @@ export async function register(input: RegisterInput) {
     });
     const user = await tx.user.create({
       data: {
+        name: input.name,
         email: input.email,
         passwordHash,
         role: "admin",
@@ -60,10 +61,10 @@ export async function login(input: LoginInput) {
   const user = await prisma.user.findUnique({ where: { email: input.email } });
   if (!user) throw new ApiError(401, "Invalid credentials");
 
-  const validPassword = await bcrypt.compare(input.password , user.passwordHash);
-  if (!validPassword) throw new ApiError(401, 'Invalid credentials');
+  const validPassword = await bcrypt.compare(input.password, user.passwordHash);
+  if (!validPassword) throw new ApiError(401, "Invalid credentials");
 
-  return issueTokenPair(user.id , user.organizationId  , user.role);
+  return issueTokenPair(user.id, user.organizationId, user.role);
 }
 
 async function issueTokenPair(
@@ -94,12 +95,16 @@ export async function refreshAccessToken(rawRefreshToken: string) {
   });
 
   if (!stored || stored.revokedAt || stored.expiresAt < new Date()) {
-    throw new ApiError(401, 'Invalid or expired refresh token');
+    throw new ApiError(401, "Invalid or expired refresh token");
   }
   await prisma.refreshToken.update({
     where: { id: stored.id },
     data: { revokedAt: new Date() },
   });
 
-  return issueTokenPair(stored.user.id, stored.user.organizationId, stored.user.role);
+  return issueTokenPair(
+    stored.user.id,
+    stored.user.organizationId,
+    stored.user.role,
+  );
 }

@@ -18,12 +18,14 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users User[]
+  users         User[]
+  subscriptions Subscription[]
 
   @@map("organizations")
 }
 
 model User {
+  name           String
   id             String    @id @default(uuid())
   email          String    @unique
   passwordHash   String
@@ -52,4 +54,39 @@ model RefreshToken {
 
   @@index([userId])
   @@map("refresh_tokens")
+}
+
+model Plan {
+  id              String    @id @default(uuid())
+  name            String
+  priceInCents    Int
+  billingInterval String
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+model Subscription {
+  id                 String   @id @default(uuid())
+  organizationId     String
+  planId             String
+  status             String
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  plan         Plan         @relation(fields: [planId], references: [id])
+
+  @@index([organizationId])
+  @@index([planId])
+  @@index([organizationId, status])
+  @@map("subscriptions")
 }
