@@ -4,6 +4,7 @@ import {
   assertValidTransition,
   subscriptionStatus,
 } from "./subscription.stateMachine";
+import { calculateProration } from "./proration";
 
 function addInterval(date: Date, interval: "monthly" | "yearly"): Date {
   const result = new Date(date);
@@ -13,6 +14,52 @@ function addInterval(date: Date, interval: "monthly" | "yearly"): Date {
     result.setFullYear(result.getFullYear() + 1);
   }
   return result;
+}
+
+export async function changePlan(
+  organizationId: string,
+  subscriptionId: string,
+  newPlanId: string,
+) {
+  return prisma.$transaction(async (tx) => {
+    const sub = await tx.subscription.findFirst({
+      where: { id: subscriptionId, organizationId },
+      include: { plan: true },
+    });
+    if (!sub) throw new ApiError(404, "Subscription Not Found");
+    if (sub.status !== "ACTIVE")
+      throw new ApiError(400, "Only active subscriptions can change plans");
+
+    const newPlan = await tx.plan.findUnique({ where: { id: newPlanId } });
+    if (!newPlan || !newPlan.isActive || newPlan.deletedAt) {
+      throw new ApiError(404, "New plan not found or inactive");
+    }
+    if (newPlan.id === sub.planId) {
+      throw new ApiError(400, "Organization is already on this plan");
+    }
+    const now = new Date();
+    const proration = calculateProration({
+      oldPriceInCents: sub.plan.priceInCents,
+      newPriceInCents: newPlan.priceInCents,
+      periodStart: sub.currentPeriodStart,
+      periodEnd: sub.currentPeriodEnd,
+      changeDate: now,
+    });
+    const updatedSub = await tx.subscription.update({
+      where: { id: sub.id },
+      data: { planId: newPlanId },
+      include: { plan: true },
+    });
+    return {
+      subscription: updatedSub,
+      proration: {
+        amountDueInCents: proration.amountDueInCents,
+        unusedCreditInCents: proration.unusedCreditInCents,
+        remainingDays: proration.remainingDays,
+        isCredit: proration.amountDueInCents < 0,
+      },
+    };
+  });
 }
 
 export async function subscribe(organizationId: string, planId: string) {

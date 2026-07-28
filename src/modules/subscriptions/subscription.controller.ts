@@ -2,6 +2,7 @@ import { Response, NextFunction } from "express";
 import {
   subscribeSchema,
   cancelSubscriptionSchema,
+  changePlanSchema,
 } from "./subscription.schema";
 import * as subscriptionService from "./subscription.service";
 import { AuthenticatedRequest } from "@/middleware/authenticate";
@@ -20,6 +21,33 @@ export async function subscribeHandler(
       input.planId,
     );
     res.status(201).json(subscription);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function changePlanHandler(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    if (!req.user) throw new ApiError(401, "Unauthorized");
+
+    const { id } = req.params;
+    if (!id || Array.isArray(id)) {
+      throw new ApiError(400, "Invalid subscription id");
+    }
+
+    const input = changePlanSchema.parse(req.body);
+
+    const result = await subscriptionService.changePlan(
+      req.user.organizationId,
+      id,
+      input.newPlanId,
+    );
+
+    res.status(200).json(result);
   } catch (err) {
     next(err);
   }
