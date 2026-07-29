@@ -20,6 +20,7 @@ model Organization {
 
   users         User[]
   subscriptions Subscription[]
+  accounts      Account[]
 
   @@map("organizations")
 }
@@ -89,4 +90,47 @@ model Subscription {
   @@index([planId])
   @@index([organizationId, status])
   @@map("subscriptions")
+}
+
+model Account {
+  id             String        @id @default(uuid())
+  organizationId String
+  type           String
+  createdAt      DateTime      @default(now())
+  organization   Organization  @relation(fields: [organizationId], references: [id])
+  entries        LedgerEntry[]
+
+  @@unique([organizationId, type])
+  @@index([organizationId])
+  @@map("accounts")
+}
+
+model LedgerTransaction {
+  id             String   @id @default(uuid())
+  organizationId String
+  type           String
+  reference      String
+  idempotencyKey String   @unique
+  createdAt      DateTime @default(now())
+
+  entries LedgerEntry[]
+
+  @@index([organizationId])
+  @@map("ledger_transactions")
+}
+
+model LedgerEntry {
+  id            String   @id @default(uuid())
+  transactionId String
+  accountId     String
+  type          String
+  amountInCents Int
+  createdAt     DateTime @default(now())
+
+  transaction LedgerTransaction @relation(fields: [transactionId], references: [id])
+  account     Account           @relation(fields: [accountId], references: [id])
+
+  @@index([accountId])
+  @@index([transactionId])
+  @@map("ledger_entries")
 }
