@@ -134,3 +134,12 @@ model LedgerEntry {
   @@index([transactionId])
   @@map("ledger_entries")
 }
+
+model ProcessedWebhookEvent {
+  id          String   @id @default(uuid())
+  eventId     String   @unique
+  eventType   String
+  processedAt DateTime @default(now())
+
+  @@map("processed_webhook_events")
+}
