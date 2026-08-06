@@ -77,12 +77,14 @@ export async function processWebhookEvent(
       }
     });
   } catch (err: any) {
-    if (err?.code === "P2002" && err?.meta?.target?.includes("eventId")) {
-      return { status: "already_processed" };
-    }
-
-    throw err;
+  console.log("DEBUG ERROR CODE:", err?.code);
+  console.log("DEBUG ERROR META:", JSON.stringify(err?.meta));
+  
+  if (err?.code === "P2002") {
+    return { status: "already_processed" };
   }
+  throw err;
+}
 
   return { status: "processed" };
 }
