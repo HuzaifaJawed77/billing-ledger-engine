@@ -14,14 +14,14 @@ function getDelayForAttempt(attempt: number): number {
 export async function scheduleDunningRetry(
   subscriptionId: string,
   attempt: number,
-  forceOutcome: "succeed" | "fail",
+  forceOutcome?: "succeed" | "fail",
 ) {
   const delay = getDelayForAttempt(attempt);
 
   const jobData: DunningJobData = {
     subscriptionId,
     attempt,
-    forceOutcome: forceOutcome === "succeed" ? "succeeded" : "failed",
+    forceOutcome
   };
 
   await dunningQueue.add("retry-payment", jobData, {

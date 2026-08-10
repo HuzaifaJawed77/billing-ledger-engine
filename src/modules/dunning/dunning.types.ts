@@ -1,7 +1,7 @@
 export interface DunningJobData {
   subscriptionId: string;
   attempt: number;
-  forceOutcome?: "succeeded" | "failed";
+  forceOutcome?: "succeed" | "fail";
 }
 
 export const MAX_DUNNING_ATTEMPTS = 3;
