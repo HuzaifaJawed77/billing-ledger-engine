@@ -19,6 +19,9 @@ const envSchema = z.object({
   WEBHOOK_SECRET: z
     .string()
     .min(32, "WEBHOOK_SECRET must be at least 32 characters long"),
+    REDIS_URL: z.url({
+  error: "REDIS_URL must be a valid URL",
+}),
 });
 
 const parsed = envSchema.safeParse(process.env);
