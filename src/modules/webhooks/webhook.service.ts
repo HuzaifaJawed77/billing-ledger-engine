@@ -91,7 +91,7 @@ export async function processWebhookEvent(
 }
 
 async function handlePaymentSucceeded(payload: PaymentWebhookPayload, tx: any) {
-  const { organizationId, amountInCents } = payload.data;
+  const { organizationId, subscriptionId, amountInCents } = payload.data;
 
   const walletAccount = await getOrCreateAccount(organizationId, "WALLET");
   const platformAccount = await getOrCreateAccount(organizationId, "PLATFORM");
@@ -105,6 +105,20 @@ async function handlePaymentSucceeded(payload: PaymentWebhookPayload, tx: any) {
     creditAccountId: platformAccount.id,
     amountInCents,
   });
+  const subscription = await prisma.subscription.findUnique({
+    where: { id: subscriptionId },
+  });
+
+  if (subscription && subscription.status === "PAST_DUE") {
+    await transitionSubscriptionStatus(subscriptionId, "ACTIVE");
+
+    await prisma.subscription.update({
+      where: { id: subscriptionId },
+      data: {
+        dunningAttempts: 0,
+      },
+    });
+  }
 }
 
 async function handlePaymentFailed(payload: PaymentWebhookPayload, tx: any) {

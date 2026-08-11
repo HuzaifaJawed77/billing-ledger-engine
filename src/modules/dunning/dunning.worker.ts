@@ -27,7 +27,7 @@ async function processDunningJob(job: Job<DunningJobData>) {
     return;
   }
   const nextAttempt = attempt + 1;
-  if (nextAttempt >= MAX_DUNNING_ATTEMPTS) {
+  if (nextAttempt > MAX_DUNNING_ATTEMPTS) {
     await transitionSubscriptionStatus(subscriptionId, "SUSPENDED");
     return;
   }
@@ -35,7 +35,7 @@ async function processDunningJob(job: Job<DunningJobData>) {
     where: { id: subscriptionId },
     data: { dunningAttempts: nextAttempt },
   });
-  await scheduleDunningRetry(subscriptionId, nextAttempt,"fail");
+  await scheduleDunningRetry(subscriptionId, nextAttempt,forceOutcome);
 }
 
 export const dunningWorker = new Worker<DunningJobData>(
