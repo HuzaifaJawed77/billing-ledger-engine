@@ -9,6 +9,7 @@ import type { PaymentWebhookPayload } from "./webhook.types";
 import { recordTransaction } from "@/modules/ledger/ledger.service";
 import { getOrCreateAccount } from "@/modules/ledger/account.service";
 import { transitionSubscriptionStatus } from "@/modules/subscriptions/subscription.service";
+import { scheduleDunningRetry } from "../dunning/dunning.service";
 
 const MAX_EVENT_AGE_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -77,29 +78,23 @@ export async function processWebhookEvent(
       }
     });
   } catch (err: any) {
-  console.log("DEBUG ERROR CODE:", err?.code);
-  console.log("DEBUG ERROR META:", JSON.stringify(err?.meta));
-  
-  if (err?.code === "P2002") {
-    return { status: "already_processed" };
+    console.log("DEBUG ERROR CODE:", err?.code);
+    console.log("DEBUG ERROR META:", JSON.stringify(err?.meta));
+
+    if (err?.code === "P2002") {
+      return { status: "already_processed" };
+    }
+    throw err;
   }
-  throw err;
-}
 
   return { status: "processed" };
 }
 
-async function handlePaymentSucceeded(
-  payload: PaymentWebhookPayload,
-  tx: any,
-) {
+async function handlePaymentSucceeded(payload: PaymentWebhookPayload, tx: any) {
   const { organizationId, amountInCents } = payload.data;
 
   const walletAccount = await getOrCreateAccount(organizationId, "WALLET");
-  const platformAccount = await getOrCreateAccount(
-    organizationId,
-    "PLATFORM",
-  );
+  const platformAccount = await getOrCreateAccount(organizationId, "PLATFORM");
 
   await recordTransaction({
     organizationId,
@@ -112,11 +107,13 @@ async function handlePaymentSucceeded(
   });
 }
 
-async function handlePaymentFailed(
-  payload: PaymentWebhookPayload,
-  tx: any,
-) {
+async function handlePaymentFailed(payload: PaymentWebhookPayload, tx: any) {
   const { subscriptionId } = payload.data;
 
   await transitionSubscriptionStatus(subscriptionId, "PAST_DUE");
+  await prisma.subscription.update({
+    where: { id: subscriptionId },
+    data: { dunningAttempts: 0 },
+  });
+  await scheduleDunningRetry(subscriptionId, 1);
 }
