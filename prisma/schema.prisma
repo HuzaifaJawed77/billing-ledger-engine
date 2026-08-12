@@ -144,3 +144,32 @@ model ProcessedWebhookEvent {
 
   @@map("processed_webhook_events")
 }
+
+model Invoice {
+  id                 String   @id @default(uuid())
+  organizationId     String
+  subscriptionId     String
+  invoiceNumber      String   @unique
+  totalAmountInCents Int
+  periodStart        DateTime
+  periodEnd          DateTime
+  status             String
+  issuedAt           DateTime @default(now())
+
+  lineItems InvoiceLineItem[]
+
+  @@index([organizationId])
+  @@index([subscriptionId])
+  @@map("invoices")
+}
+
+model InvoiceLineItem {
+  id            String @id @default(uuid())
+  invoiceId     String
+  description   String
+  amountInCents Int
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+
+  @@map("invoice_line_items")
+}
