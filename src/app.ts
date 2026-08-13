@@ -6,6 +6,8 @@ import { subscriptionRouter } from "@/modules/subscriptions/subscription.routes"
 import { ledgerRouter } from "@/modules/ledger/ledger.routes";
 import { webhookRouter } from "@/modules/webhooks/webhook.routes";
 import { dunningRouter } from "@/modules/dunning/dunning.routes";
+import { invoiceRouter } from "@/modules/invoicing/invoice.routes";
+import { reportingRouter } from "@/modules/reporting/reporting.routes";
 
 export const app = express();
 
@@ -19,5 +21,7 @@ app.use("/api/subscriptions", subscriptionRouter);
 app.use("/api/ledger", ledgerRouter);
 app.use("/api/webhooks", webhookRouter);
 app.use("/api/dunning", dunningRouter);
+app.use("/api/invoices", invoiceRouter);
+app.use("/api/reporting", reportingRouter);
 
 app.use(errorHandler);
