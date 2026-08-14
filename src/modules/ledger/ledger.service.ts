@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/lib/apiError";
 import type { TransactionType } from "./ledger.types";
+import type { Prisma } from "@/generated/prisma/client";
 
 interface RecordTransactionParams {
   organizationId: string;
@@ -23,6 +24,7 @@ interface RecordTransactionParams {
  */
 export async function recordTransaction(
   params: RecordTransactionParams,
+  tx: Prisma.TransactionClient,
 ) {
   const {
     organizationId,
@@ -39,68 +41,64 @@ export async function recordTransaction(
   }
 
   if (debitAccountId === creditAccountId) {
-    throw new ApiError(
-      400,
-      "Debit and credit accounts must be different",
-    );
+    throw new ApiError(400, "Debit and credit accounts must be different");
   }
+  const db = tx ?? prisma;
 
   try {
-    return await prisma.$transaction(async (tx) => {
-      const accounts = await tx.account.findMany({
-        where: {
-          id: {
-            in: [debitAccountId, creditAccountId],
-          },
-          organizationId,
+    const accounts = await db.account.findMany({
+      where: {
+        id: {
+          in: [debitAccountId, creditAccountId],
         },
-      });
+        organizationId,
+      },
+    });
 
-      if (accounts.length !== 2) {
-        throw new ApiError(
-          404,
-          "One or both accounts do not exist for this organization",
-        );
-      }
+    if (accounts.length !== 2) {
+      throw new ApiError(
+        404,
+        "One or both accounts do not exist for this organization",
+      );
+    }
 
-      const transaction = await tx.ledgerTransaction.create({
-        data: {
-          organizationId,
-          type,
-          reference,
-          idempotencyKey,
+    const transaction = await db.ledgerTransaction.create({
+      data: {
+        organizationId,
+        type,
+        reference,
+        idempotencyKey,
+      },
+    });
+
+    await db.ledgerEntry.createMany({
+      data: [
+        {
+          transactionId: transaction.id,
+          accountId: debitAccountId,
+          type: "DEBIT",
+          amountInCents,
         },
-      });
-
-      await tx.ledgerEntry.createMany({
-        data: [
-          {
-            transactionId: transaction.id,
-            accountId: debitAccountId,
-            type: "DEBIT",
-            amountInCents,
-          },
-          {
-            transactionId: transaction.id,
-            accountId: creditAccountId,
-            type: "CREDIT",
-            amountInCents,
-          },
-        ],
-      });
-
-      return tx.ledgerTransaction.findUnique({
-        where: {
-          id: transaction.id,
+        {
+          transactionId: transaction.id,
+          accountId: creditAccountId,
+          type: "CREDIT",
+          amountInCents,
         },
-        include: {
-          entries: {
-            include: {
-              account: true,
-            },
+      ],
+    });
+
+    return db.ledgerTransaction.findUnique({
+      where: {
+        id: transaction.id,
+      },
+      include: {
+        entries: {
+          include: {
+            account: true,
           },
         },
-      });
+      },
     });
   } catch (err: any) {
     // Prisma unique constraint violation (idempotency key)
@@ -109,19 +107,14 @@ export async function recordTransaction(
       Array.isArray(err?.meta?.target) &&
       err.meta.target.includes("idempotencyKey")
     ) {
-      throw new ApiError(
-        409,
-        "Transaction has already been processed",
-      );
+      throw new ApiError(409, "Transaction has already been processed");
     }
 
     throw err;
   }
 }
 
-export async function getTransactionHistory(
-  organizationId: string,
-) {
+export async function getTransactionHistory(organizationId: string) {
   return prisma.ledgerTransaction.findMany({
     where: {
       organizationId,

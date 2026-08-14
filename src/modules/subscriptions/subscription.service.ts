@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/lib/apiError";
+import type { Prisma } from "@/generated/prisma/client";
 import {
   assertValidTransition,
   subscriptionStatus,
@@ -168,17 +169,18 @@ export async function cancelSubscription(
 export async function transitionSubscriptionStatus(
   subscriptionId: string,
   newStatus: subscriptionStatus,
+  tx?: Prisma.TransactionClient,
 ) {
-  return prisma.$transaction(async (tx) => {
-    const sub = await tx.subscription.findUniqueOrThrow({
+  const db = tx ?? prisma;
+    const sub = await db.subscription.findUniqueOrThrow({
       where: { id: subscriptionId },
     });
 
     assertValidTransition(sub.status as subscriptionStatus, newStatus);
 
-    return tx.subscription.update({
+    return db.subscription.update({
       where: { id: subscriptionId },
       data: { status: newStatus },
     });
-  });
+
 }

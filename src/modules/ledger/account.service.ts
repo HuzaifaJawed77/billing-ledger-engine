@@ -1,11 +1,14 @@
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@/generated/prisma/client";
 import type { AccountType } from "./ledger.types";
 
 export async function getOrCreateAccount(
   organizationId: string,
   type: AccountType,
+  tx?:Prisma.TransactionClient,
 ) {
-  return prisma.account.upsert({
+  const db = tx ?? prisma;
+  return db.account.upsert({
     where: { organizationId_type: { organizationId, type } },
     update: {},
     create: {

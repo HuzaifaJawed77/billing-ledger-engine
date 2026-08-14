@@ -1,6 +1,6 @@
 import crypto from "crypto";
-
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@/generated/prisma/client";
 import { ApiError } from "@/lib/apiError";
 
 import { signPayload } from "./paymentSimulator";
@@ -45,7 +45,8 @@ function isEventStale(timestamp: string): boolean {
  * 1. Verify signature
  * 2. Reject stale events
  * 3. Enforce idempotency
- * 4. Apply business logic
+ * 4. Apply business logic atomically
+ * 5. Trigger external side effects after commit
  */
 export async function processWebhookEvent(
   payload: PaymentWebhookPayload,
@@ -58,6 +59,8 @@ export async function processWebhookEvent(
   if (isEventStale(payload.timestamp)) {
     throw new ApiError(400, "Webhook event is too old to process");
   }
+
+  let shouldScheduleDunning = false;
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -74,45 +77,61 @@ export async function processWebhookEvent(
       }
 
       if (payload.eventType === "payment.failed") {
-        await handlePaymentFailed(payload, tx);
+        shouldScheduleDunning = await handlePaymentFailed(payload, tx);
       }
     });
   } catch (err: any) {
-    console.log("DEBUG ERROR CODE:", err?.code);
-    console.log("DEBUG ERROR META:", JSON.stringify(err?.meta));
-
     if (err?.code === "P2002") {
       return { status: "already_processed" };
     }
+
     throw err;
+  }
+
+  // Redis/BullMQ is an external side effect.
+  // Only enqueue after the database transaction has committed.
+  if (shouldScheduleDunning) {
+    await scheduleDunningRetry(payload.data.subscriptionId, 1);
   }
 
   return { status: "processed" };
 }
 
-async function handlePaymentSucceeded(payload: PaymentWebhookPayload, tx: any) {
+async function handlePaymentSucceeded(
+  payload: PaymentWebhookPayload,
+  tx: Prisma.TransactionClient,
+) {
   const { organizationId, subscriptionId, amountInCents } = payload.data;
 
-  const walletAccount = await getOrCreateAccount(organizationId, "WALLET");
-  const platformAccount = await getOrCreateAccount(organizationId, "PLATFORM");
+  const walletAccount = await getOrCreateAccount(organizationId, "WALLET", tx);
 
-  await recordTransaction({
+  const platformAccount = await getOrCreateAccount(
     organizationId,
-    type: "CHARGE",
-    reference: `webhook-${payload.eventId}`,
-    idempotencyKey: payload.eventId,
-    debitAccountId: walletAccount.id,
-    creditAccountId: platformAccount.id,
-    amountInCents,
-  });
-  const subscription = await prisma.subscription.findUnique({
+    "PLATFORM",
+    tx,
+  );
+
+  await recordTransaction(
+    {
+      organizationId,
+      type: "CHARGE",
+      reference: `webhook-${payload.eventId}`,
+      idempotencyKey: payload.eventId,
+      debitAccountId: walletAccount.id,
+      creditAccountId: platformAccount.id,
+      amountInCents,
+    },
+    tx,
+  );
+
+  const subscription = await tx.subscription.findUnique({
     where: { id: subscriptionId },
   });
 
   if (subscription && subscription.status === "PAST_DUE") {
-    await transitionSubscriptionStatus(subscriptionId, "ACTIVE");
+    await transitionSubscriptionStatus(subscriptionId, "ACTIVE", tx);
 
-    await prisma.subscription.update({
+    await tx.subscription.update({
       where: { id: subscriptionId },
       data: {
         dunningAttempts: 0,
@@ -121,13 +140,20 @@ async function handlePaymentSucceeded(payload: PaymentWebhookPayload, tx: any) {
   }
 }
 
-async function handlePaymentFailed(payload: PaymentWebhookPayload, tx: any) {
+async function handlePaymentFailed(
+  payload: PaymentWebhookPayload,
+  tx: Prisma.TransactionClient,
+): Promise<boolean> {
   const { subscriptionId } = payload.data;
 
-  await transitionSubscriptionStatus(subscriptionId, "PAST_DUE");
-  await prisma.subscription.update({
+  await transitionSubscriptionStatus(subscriptionId, "PAST_DUE", tx);
+
+  await tx.subscription.update({
     where: { id: subscriptionId },
-    data: { dunningAttempts: 0 },
+    data: {
+      dunningAttempts: 0,
+    },
   });
-  await scheduleDunningRetry(subscriptionId, 1);
+
+  return true;
 }
