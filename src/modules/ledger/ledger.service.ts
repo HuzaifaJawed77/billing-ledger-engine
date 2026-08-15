@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/lib/apiError";
+import { logger } from "@/lib/logger";
 import type { TransactionType } from "./ledger.types";
 import type { Prisma } from "@/generated/prisma/client";
 
@@ -56,10 +57,11 @@ export async function recordTransaction(
     });
 
     if (accounts.length !== 2) {
-      throw new ApiError(
-        404,
-        "One or both accounts do not exist for this organization",
+      logger.warn(
+        { organizationId, debitAccountId, creditAccountId },
+        "Ledger transaction rejected: one or both accounts not found",
       );
+      throw new ApiError(404,"One or both accounts do not exist for this organization",);
     }
 
     const transaction = await db.ledgerTransaction.create({
@@ -88,6 +90,17 @@ export async function recordTransaction(
       ],
     });
 
+    logger.info(
+      {
+        transactionId: transaction.id,
+        organizationId,
+        type,
+        amountInCents,
+        idempotencyKey,
+      },
+      "Ledger transaction recorded",
+    );
+
     return db.ledgerTransaction.findUnique({
       where: {
         id: transaction.id,
@@ -107,9 +120,17 @@ export async function recordTransaction(
       Array.isArray(err?.meta?.target) &&
       err.meta.target.includes("idempotencyKey")
     ) {
+      logger.warn(
+        { idempotencyKey, organizationId },
+        "Duplicate ledger transaction blocked by idempotency key",
+      );
       throw new ApiError(409, "Transaction has already been processed");
     }
 
+    logger.error(
+      { err, organizationId, idempotencyKey },
+      "Ledger transaction failed unexpectedly",
+    );
     throw err;
   }
 }

@@ -1,4 +1,6 @@
 import express from "express";
+import pinoHttp from "pino-http";
+import {logger} from '@/lib/logger'
 import { errorHandler } from "@/middleware/errorHandler";
 import { authRouter } from "@/modules/auth/auth.routes";
 import { planRouter } from "@/modules/plans/plans.routes";
@@ -14,6 +16,9 @@ export const app = express();
 app.use(express.json());
 
 app.use(express.urlencoded({ extended: true }));
+
+app.use(pinoHttp({ logger }));
+
 
 app.use("/api/auth", authRouter);
 app.use("/api/plans", planRouter);

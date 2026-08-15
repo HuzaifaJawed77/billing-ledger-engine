@@ -5,6 +5,8 @@ import { redisConnection } from "@/lib/redisConnection";
 import { scheduleDunningRetry, simulateRetryOutcome } from "./dunning.service";
 import { MAX_DUNNING_ATTEMPTS } from "@/modules/dunning/dunning.types";
 import { transitionSubscriptionStatus } from "@/modules/subscriptions/subscription.service";
+import { logger } from "@/lib/logger";
+
 
 async function processDunningJob(job: Job<DunningJobData>) {
   const { subscriptionId, attempt, forceOutcome } = job.data;
@@ -44,9 +46,9 @@ export const dunningWorker = new Worker<DunningJobData>(
   { connection: redisConnection },
 );
 dunningWorker.on("completed", (job) => {
-  console.log(`Dunning job ${job.id} completed (subscription: ${job.data.subscriptionId})`);
+  logger.info({ jobId: job.id, subscriptionId: job.data.subscriptionId }, "Dunning job completed");
 });
 
 dunningWorker.on("failed", (job, err) => {
-  console.error(`Dunning job ${job?.id} failed:`, err.message);
+  logger.error({ jobId: job?.id, err }, "Dunning job failed");
 });

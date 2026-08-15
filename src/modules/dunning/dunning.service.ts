@@ -1,8 +1,10 @@
 import { dunningQueue } from "./dunning.queue";
 import { RETRY_DELAYS_MS, type DunningJobData } from "./dunning.types";
+import { logger } from "@/lib/logger";
+
 
 function getDelayForAttempt(attempt: number): number {
-  const delay = RETRY_DELAYS_MS[attempt];
+  const delay = RETRY_DELAYS_MS[attempt-1];
 
   if (delay !== undefined) {
     return delay;
@@ -27,6 +29,10 @@ export async function scheduleDunningRetry(
   await dunningQueue.add("retry-payment", jobData, {
     delay,
   });
+   logger.info(
+    { subscriptionId, attempt, delayMs: delay, forceOutcome },
+    "Dunning retry job scheduled",
+  );
 }
 
 export function simulateRetryOutcome(forceOutcome?: "succeed" | "fail") : boolean{

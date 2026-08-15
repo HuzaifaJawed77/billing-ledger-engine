@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
 import { ApiError } from "@/lib/apiError";
+import { logger } from "@/lib/logger";
 
 import { signPayload } from "./paymentSimulator";
 import type { PaymentWebhookPayload } from "./webhook.types";
@@ -53,10 +54,18 @@ export async function processWebhookEvent(
   signature: string,
 ) {
   if (!verifySignature(payload, signature)) {
+    logger.warn(
+      { eventId: payload.eventId, eventType: payload.eventType },
+      "Webhook signature verification failed",
+    );
     throw new ApiError(401, "Invalid webhook signature");
   }
 
   if (isEventStale(payload.timestamp)) {
+    logger.warn(
+      { eventId: payload.eventId, timestamp: payload.timestamp },
+      "Stale webhook event rejected",
+    );
     throw new ApiError(400, "Webhook event is too old to process");
   }
 
@@ -82,9 +91,17 @@ export async function processWebhookEvent(
     });
   } catch (err: any) {
     if (err?.code === "P2002") {
+      logger.info(
+        { eventId: payload.eventId, eventType: payload.eventType },
+        "Duplicate webhook event ignored",
+      );
       return { status: "already_processed" };
     }
 
+    logger.error(
+      { eventId: payload.eventId, err },
+      "Webhook processing failed unexpectedly",
+    );
     throw err;
   }
 
@@ -92,7 +109,16 @@ export async function processWebhookEvent(
   // Only enqueue after the database transaction has committed.
   if (shouldScheduleDunning) {
     await scheduleDunningRetry(payload.data.subscriptionId, 1);
+    logger.info(
+      { subscriptionId: payload.data.subscriptionId },
+      "Dunning retry scheduled after payment failure",
+    );
   }
+
+  logger.info(
+    { eventId: payload.eventId, eventType: payload.eventType },
+    "Webhook event processed successfully",
+  );
 
   return { status: "processed" };
 }
@@ -137,6 +163,11 @@ async function handlePaymentSucceeded(
         dunningAttempts: 0,
       },
     });
+
+    logger.info(
+      { subscriptionId },
+      "Subscription recovered from PAST_DUE to ACTIVE",
+    );
   }
 }
 
